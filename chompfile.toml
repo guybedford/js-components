@@ -1,0 +1,11 @@
+version = 0.1
+default-task = 'build'
+
+[[task]]
+name = 'build'
+deps = ['pkg/js_components.js']
+
+[[task]]
+target = 'pkg/js_components.js'
+deps = ['src/*.rs', 'Cargo.toml']
+run = 'wasm-pack build --target web'

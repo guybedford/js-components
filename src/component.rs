@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use wasmparser::{
 	CanonicalOption, ComponentArgKind, ComponentFunction, ComponentTypeDef, ExternalKind, Instance,
 };
@@ -40,7 +40,7 @@ pub struct ValueIndex(pub u32);
 
 // Core Module Reference
 #[derive(Debug, Serialize)]
-#[serde(tag = "sort", content = "idx", rename_all = "camelCase")]
+#[serde(tag = "sort", content = "value", rename_all = "camelCase")]
 pub enum ModuleRef {
 	Function(u32),
 	Table(u32),
@@ -52,7 +52,7 @@ pub enum ModuleRef {
 
 // Component Index Reference
 #[derive(Debug, Serialize)]
-#[serde(tag = "sort", content = "idx", rename_all = "camelCase")]
+#[serde(tag = "sort", content = "value", rename_all = "camelCase")]
 pub enum ComponentRef {
 	Module(ModuleIndex),
 	Component(ComponentIndex),
@@ -93,8 +93,8 @@ pub enum Alias<'a, RefType = ComponentRef> {
 #[serde(rename_all = "camelCase")]
 pub enum ModuleDecl<'a> {
 	Module {
-		#[serde(skip_serializing)]
-		bytes: &'a [u8],
+		start: usize,
+		end: usize,
 	},
 	Alias(Alias<'a, ModuleIndex>),
 }
@@ -107,20 +107,18 @@ impl<'a> From<Alias<'a, ModuleIndex>> for ModuleDecl<'a> {
 
 #[derive(Debug, Serialize)]
 pub struct Component<'a> {
-	// saves having to work out dag ordering
-	pub instance_function_order: Vec<InstanceOrFunction>,
 	pub modules: Vec<ModuleDecl<'a>>,
 	pub components: Vec<ComponentDecl<'a>>,
 	pub instances: Vec<InstanceDecl<'a>>,
-	pub types: Vec<TypeDecl<'a>>,
+	pub types: Vec<ComponentTypeDecl<'a>>,
 	pub functions: Vec<FunctionDecl<'a>>,
 	pub values: Vec<Alias<'a, ValueIndex>>,
 	pub tables: Vec<Alias<'a, TableIndex>>,
 	pub memories: Vec<Alias<'a, MemoryIndex>>,
 	pub globals: Vec<Alias<'a, GlobalIndex>>,
 	pub tags: Vec<Alias<'a, TagIndex>>,
-	pub imports: HashMap<&'a str, TypeIndex>,
-	pub exports: HashMap<&'a str, ComponentRef>,
+	pub imports: BTreeMap<&'a str, TypeIndex>,
+	pub exports: BTreeMap<&'a str, ComponentRef>,
 }
 
 #[derive(Debug, Serialize)]
@@ -137,24 +135,24 @@ impl<'a> From<Alias<'a, ComponentIndex>> for ComponentDecl<'a> {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "sort", rename_all = "kebab-case")]
 pub enum InstanceDecl<'a> {
 	ImportedInstance {
 		specifier: &'a str,
 	},
 	Module {
 		index: ModuleIndex,
-		imports: HashMap<&'a str, InstanceIndex>,
+		imports: BTreeMap<&'a str, InstanceIndex>,
 	},
 	Component {
 		index: ComponentIndex,
-		imports: HashMap<&'a str, ComponentRef>,
+		imports: BTreeMap<&'a str, ComponentRef>,
 	},
 	ModuleFromExports {
-		exports: HashMap<&'a str, ModuleRef>,
+		exports: BTreeMap<&'a str, ModuleRef>,
 	},
 	ComponentFromExports {
-		exports: HashMap<&'a str, ComponentRef>,
+		exports: BTreeMap<&'a str, ComponentRef>,
 	},
 	Alias(Alias<'a, InstanceIndex>),
 }
@@ -182,7 +180,7 @@ impl<'a> From<Instance<'a>> for InstanceDecl<'a> {
 	fn from(instance: Instance<'a>) -> InstanceDecl<'a> {
 		match instance {
 			Instance::Module { index, args } => {
-				let mut imports = HashMap::new();
+				let mut imports = BTreeMap::new();
 				for arg in args.iter() {
 					imports.insert(
 						arg.name,
@@ -197,7 +195,7 @@ impl<'a> From<Instance<'a>> for InstanceDecl<'a> {
 				}
 			}
 			Instance::Component { index, args } => {
-				let mut imports = HashMap::<&'a str, ComponentRef>::new();
+				let mut imports = BTreeMap::<&'a str, ComponentRef>::new();
 				for arg in args.iter() {
 					imports.insert(arg.name, (&arg.kind).into());
 				}
@@ -207,7 +205,7 @@ impl<'a> From<Instance<'a>> for InstanceDecl<'a> {
 				}
 			}
 			Instance::ModuleFromExports(args) => {
-				let mut exports = HashMap::new();
+				let mut exports = BTreeMap::new();
 				for arg in args.iter() {
 					exports.insert(
 						arg.name,
@@ -223,7 +221,7 @@ impl<'a> From<Instance<'a>> for InstanceDecl<'a> {
 				InstanceDecl::ModuleFromExports { exports }
 			}
 			Instance::ComponentFromExports(args) => {
-				let mut exports = HashMap::new();
+				let mut exports = BTreeMap::new();
 				for arg in args.iter() {
 					exports.insert(arg.name, (&arg.kind).into());
 				}
@@ -244,7 +242,7 @@ pub enum EncodingOption {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "sort", rename_all = "camelCase")]
 pub enum FunctionDecl<'a> {
 	Lift {
 		type_index: TypeIndex,
@@ -267,12 +265,12 @@ impl<'a> From<Alias<'a, FunctionIndex>> for FunctionDecl<'a> {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum TypeDecl<'a> {
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum ComponentTypeDecl<'a> {
 	Function(ComponentFuncType<'a>),
-	Module(Vec<ModuleType<'a>>),
-	Component(Vec<ComponentType<'a>>),
-	Instance(Vec<InstanceType<'a>>),
+	Module(ModuleType<'a>),
+	Component(ComponentType<'a>),
+	Instance(InstanceType<'a>),
 	Value(InterfaceTypeRef),
 	Interface(InterfaceType<'a>),
 	Alias(Alias<'a, TypeIndex>),
@@ -326,15 +324,15 @@ impl From<&wasmparser::FuncType> for FuncType {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum TypeDef {
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum ModuleTypeDecl {
 	Func(FuncType),
 }
 
-impl From<&wasmparser::TypeDef> for TypeDef {
-	fn from (t: &wasmparser::TypeDef) -> TypeDef {
+impl From<&wasmparser::TypeDef> for ModuleTypeDecl {
+	fn from (t: &wasmparser::TypeDef) -> ModuleTypeDecl {
 		match t {
-			wasmparser::TypeDef::Func(f) => TypeDef::Func(f.into()),
+			wasmparser::TypeDef::Func(f) => ModuleTypeDecl::Func(f.into()),
 		}
 	}
 }
@@ -342,16 +340,16 @@ impl From<&wasmparser::TypeDef> for TypeDef {
 // These details may not be needed for interface types polyfill?
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TableType;
+pub struct TableType;
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct MemoryType;
+pub struct MemoryType;
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GlobalType;
+pub struct GlobalType;
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TagType;
+pub struct TagType;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -394,61 +392,36 @@ impl<'a> From<&wasmparser::Import<'a>> for Import<'a> {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ModuleType<'a> {
-	Type(TypeDef),
-	Export {
-		name: &'a str,
-		ty: TypeRef,
-	},
-	Import(Import<'a>),
+pub struct ModuleType<'a> {
+	types: Vec<ModuleTypeDecl>,
+	exports: BTreeMap<&'a str, TypeRef>,
+	imports: BTreeMap<&'a str, BTreeMap<&'a str, TypeRef>>,
 }
 
-impl<'a> From<&wasmparser::ModuleType<'a>> for ModuleType<'a> {
-	fn from (m: &wasmparser::ModuleType<'a>) -> ModuleType<'a> {
-		match m {
-			wasmparser::ModuleType::Type(t) => ModuleType::Type(t.into()),
-			wasmparser::ModuleType::Export { name, ty } => ModuleType::Export { name, ty: ty.into() },
-			wasmparser::ModuleType::Import(i) => ModuleType::Import(i.into()),
+impl<'a> ModuleType<'a> {
+	fn new() -> ModuleType<'a> {
+		ModuleType {
+			types: Vec::new(),
+			exports: BTreeMap::new(),
+			imports: BTreeMap::new(),
 		}
 	}
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ComponentImport<'a> {
-	pub name: &'a str,
-	pub ty: u32,
+pub struct ComponentType<'a> {
+	types: Vec<ComponentTypeDecl<'a>>,
+	exports: BTreeMap<&'a str, u32>,
+	imports: BTreeMap<&'a str, u32>,
 }
 
-impl<'a> From<&wasmparser::ComponentImport<'a>> for ComponentImport<'a> {
-	fn from (c: &wasmparser::ComponentImport<'a>) -> ComponentImport<'a> {
-		ComponentImport { name: c.name, ty: c.ty }
-	}
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ComponentType<'a> {
-	Type(TypeDecl<'a>),
-	OuterType {
-		count: u32,
-		index: u32,
-	},
-	Export {
-		name: &'a str,
-		ty: u32,
-	},
-	Import(ComponentImport<'a>),
-}
-
-impl<'a> From<&wasmparser::ComponentType<'a>> for ComponentType<'a> {
-	fn from (c: &wasmparser::ComponentType<'a>) -> ComponentType<'a> {
-		match c {
-			wasmparser::ComponentType::Type(c) => ComponentType::Type(c.into()),
-			wasmparser::ComponentType::OuterType { count, index } => ComponentType::OuterType { count: *count, index: *index },
-			wasmparser::ComponentType::Export { name, ty } => ComponentType::Export { name, ty: *ty },
-			wasmparser::ComponentType::Import(c) => ComponentType::Import(c.into()),
+impl<'a> ComponentType<'a> {
+	fn new() -> ComponentType<'a> {
+		ComponentType {
+			types: Vec::new(),
+			exports: BTreeMap::new(),
+			imports: BTreeMap::new(),
 		}
 	}
 }
@@ -472,28 +445,19 @@ impl<'a> From<&wasmparser::ComponentFuncType<'a>> for ComponentFuncType<'a> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum InstanceType<'a> {
-	Type(Box<TypeDecl<'a>>),
-	OuterType {
-		count: u32,
-		index: u32,
-	},
-	Export {
-		name: &'a str,
-		ty: u32,
-	}
+pub struct InstanceType<'a> {
+	types: Vec<ComponentTypeDecl<'a>>,
+	exports: BTreeMap<&'a str, u32>,
 }
 
-impl<'a> From<&wasmparser::InstanceType<'a>> for InstanceType<'a> {
-	fn from(i: &wasmparser::InstanceType<'a>) -> InstanceType<'a> {
-		match i {
-			wasmparser::InstanceType::Type(c) => InstanceType::Type(Box::new(c.into())),
-			wasmparser::InstanceType::OuterType { count, index } => InstanceType::OuterType { count: *count, index: *index },
-			wasmparser::InstanceType::Export { name, ty } => InstanceType::Export { name, ty: *ty }
+impl<'a> InstanceType<'a> {
+	fn new() -> InstanceType<'a> {
+		InstanceType {
+			types: Vec::new(),
+			exports: BTreeMap::new()
 		}
 	}
 }
-
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -536,7 +500,7 @@ impl From<&wasmparser::PrimitiveInterfaceType> for PrimitiveInterfaceType {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", tag = "type", content = "value")]
 pub enum InterfaceTypeRef {
 	Primitive(PrimitiveInterfaceType),
 	Type(u32),
@@ -570,10 +534,10 @@ impl<'a> From<&wasmparser::VariantCase<'a>> for VariantCase<'a> {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", tag = "type", content = "value")]
 pub enum InterfaceType<'a> {
 	Primitive(PrimitiveInterfaceType),
-	Record(HashMap<&'a str, InterfaceTypeRef>),
+	Record(BTreeMap<&'a str, InterfaceTypeRef>),
 	Variant(Vec<VariantCase<'a>>),
 	List(InterfaceTypeRef),
 	Tuple(Vec<InterfaceTypeRef>),
@@ -592,7 +556,7 @@ impl<'a> From<&wasmparser::InterfaceType<'a>> for InterfaceType<'a> {
 		match i {
 			wasmparser::InterfaceType::Primitive(p) => InterfaceType::Primitive(p.into()),
 			wasmparser::InterfaceType::Record(items) => {
-				let mut map = HashMap::new();
+				let mut map = BTreeMap::new();
 				for &r in items.iter() {
 					map.insert(r.0, (&r.1).into());
 				}
@@ -642,39 +606,85 @@ impl<'a> From<&wasmparser::InterfaceType<'a>> for InterfaceType<'a> {
 	}
 }
 
-impl<'a> From<Alias<'a, TypeIndex>> for TypeDecl<'a> {
-	fn from(alias: Alias<'a, TypeIndex>) -> TypeDecl<'a> {
-		TypeDecl::Alias(alias)
+impl<'a> From<Alias<'a, TypeIndex>> for ComponentTypeDecl<'a> {
+	fn from(alias: Alias<'a, TypeIndex>) -> ComponentTypeDecl<'a> {
+		ComponentTypeDecl::Alias(alias)
 	}
 }
 
-impl<'a> From<&ComponentTypeDef<'a>> for TypeDecl<'a> {
-	fn from(def: &ComponentTypeDef<'a>) -> TypeDecl<'a> {
+impl<'a> From<&ComponentTypeDef<'a>> for ComponentTypeDecl<'a> {
+	fn from(def: &ComponentTypeDef<'a>) -> ComponentTypeDecl<'a> {
 		match def {
 			ComponentTypeDef::Module(m) => {
-				let mut v = Vec::new();
+				let mut module_type = ModuleType::new();
 				for m in m.iter() {
-					v.push(m.into());
+					match m {
+						wasmparser::ModuleType::Type(t) => {
+							module_type.types.push(t.into());
+						},
+						wasmparser::ModuleType::Export { name, ty } => {
+							module_type.exports.insert(name, ty.into());
+						},
+						wasmparser::ModuleType::Import(wasmparser::Import { module, name, ty }) => {
+							let module_map = match module_type.imports.get_mut(module) {
+								Some(m) => m,
+								None => {
+									module_type.imports.insert(module, BTreeMap::new());
+									module_type.imports.get_mut(module).unwrap()
+								}
+							};
+							module_map.insert(name, ty.into());
+						}
+					};
 				}
-				TypeDecl::Module(v.into())
+				ComponentTypeDecl::Module(module_type)
 			},
 			ComponentTypeDef::Component(c) => {
-				let mut v = Vec::new();
-				for m in c.iter() {
-					v.push(m.into());
+				let mut component_type = ComponentType::new();
+				for c in c.iter() {
+					match c {
+						wasmparser::ComponentType::OuterType { count, index } => {
+							component_type.types.push(ComponentTypeDecl::Alias(Alias::Outer {
+								count: *count,
+								reference: TypeIndex(*index)
+							}))
+						},
+						wasmparser::ComponentType::Type(t) => {
+							component_type.types.push(t.into());
+						},
+						wasmparser::ComponentType::Export { name, ty } => {
+							component_type.exports.insert(name, *ty);
+						},
+						wasmparser::ComponentType::Import(wasmparser::ComponentImport { name, ty }) => {
+							component_type.imports.insert(name, *ty);
+						}
+					};
 				}
-				TypeDecl::Component(v.into())
+				ComponentTypeDecl::Component(component_type)
 			},
 			ComponentTypeDef::Instance(i) => {
-				let mut v = Vec::new();
-				for m in i.iter() {
-					v.push(m.into());
+				let mut instance_type = InstanceType::new();
+				for i in i.iter() {
+					match i {
+						wasmparser::InstanceType::OuterType { count, index } => {
+							instance_type.types.push(ComponentTypeDecl::Alias(Alias::Outer {
+								count: *count,
+								reference: TypeIndex(*index)
+							}))
+						},
+						wasmparser::InstanceType::Type(t) => {
+							instance_type.types.push(t.into());
+						},
+						wasmparser::InstanceType::Export { name, ty } => {
+							instance_type.exports.insert(name, *ty);
+						}
+					};
 				}
-				TypeDecl::Instance(v.into())
+				ComponentTypeDecl::Instance(instance_type)
 			},
-			ComponentTypeDef::Function(c) => TypeDecl::Function(c.into()),
-			ComponentTypeDef::Value(ref i) => TypeDecl::Value(i.into()),
-			ComponentTypeDef::Interface(i) => TypeDecl::Interface(i.into()),
+			ComponentTypeDef::Function(c) => ComponentTypeDecl::Function(c.into()),
+			ComponentTypeDef::Value(ref i) => ComponentTypeDecl::Value(i.into()),
+			ComponentTypeDef::Interface(i) => ComponentTypeDecl::Interface(i.into()),
 		}
 	}
 }
@@ -682,7 +692,6 @@ impl<'a> From<&ComponentTypeDef<'a>> for TypeDecl<'a> {
 impl<'a> Component<'a> {
 	pub fn new() -> Component<'a> {
 		Component {
-			instance_function_order: Vec::new(),
 			modules: Vec::new(),
 			components: Vec::new(),
 			instances: Vec::new(),
@@ -693,8 +702,8 @@ impl<'a> Component<'a> {
 			globals: Vec::new(),
 			tags: Vec::new(),
 			types: Vec::new(),
-			imports: HashMap::new(),
-			exports: HashMap::new(),
+			imports: BTreeMap::new(),
+			exports: BTreeMap::new(),
 		}
 	}
 }

@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>JS Components Example</title>
+  </head>
+  <body>
+    <script type="module">
+      import { Component } from './components-polyfill.js';
+
+      const c = new Component(await (await fetch("service.wasm")).arrayBuffer());
+
+      await c.compile();
+      // console.log(c.getImportTypes());
+      
+      const cache = {};
+      c.link({
+        'backend-0.1.0': {
+          fetch: (x) => {
+            console.log('FETCH');
+            return new Uint8Array([...`${Math.random()}`.slice(2, 5)]);
+          }
+        },
+        'cache-0.1.0': {
+          get: (key) => {
+            console.log('GET');
+            return cache[key] || null;
+          },
+          put: (key, value) => {
+            console.log('PUT');
+            cache[key] = value;
+          }
+        }
+      });
+
+      await c.execute();
+
+      console.log(c.exports['backend-0.1.0'].fetch('test'));
+      console.log(c.exports['backend-0.1.0'].fetch('test'));
+    </script>
+  </body>
+</html>
