@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use wasm_bindgen::prelude::*;
 use wasmparser::{
 	Alias, Chunk, ComponentAlias, ComponentExport, ComponentImport, ComponentOuterAliasKind,
-	ComponentTypeRef, Encoding, Parser, Payload::*,
+	ComponentTypeRef, ComponentValType, Encoding, Parser, Payload::*,
 };
 
 mod component;
@@ -42,9 +42,14 @@ fn parse_internal(mut bytes: &[u8]) -> anyhow::Result<String> {
 					}
 				},
 				// Component Sections
+				TypeSection(type_section_reader) => {
+					for core_type in type_section_reader {
+						c.core_types.push((&core_type?).into());
+					}
+				},
 				ComponentTypeSection(component_type_section_reader) => {
 					for component_type in component_type_section_reader {
-						// c.types.push((&component_type?).into());
+						c.types.push((&component_type?).into());
 					}
 				},
 				ComponentImportSection(component_import_section_reader) => {
@@ -52,25 +57,33 @@ fn parse_internal(mut bytes: &[u8]) -> anyhow::Result<String> {
 						let ComponentImport { name, ty } = component_import?;
 						match ty {
 							ComponentTypeRef::Instance(idx) => {
-								c.imports.insert(name, component::TypeIndex(idx));
+								c.imports.insert(name, component::ComponentValType::Type(idx));
 								c.instances.push(component::ComponentInstanceDecl::Imported(name));
 							},
 							ComponentTypeRef::Module(idx) => {
-								c.imports.insert(name, component::TypeIndex(idx));
+								c.imports.insert(name, component::ComponentValType::Type(idx));
 								c.modules.push(component::ModuleDecl::Imported(name));
 							},
 							ComponentTypeRef::Func(idx) => {
-								c.imports.insert(name, component::TypeIndex(idx));
+								c.imports.insert(name, component::ComponentValType::Type(idx));
 								c.funcs.push(component::FuncDecl::Imported(name));
 							},
-							ComponentTypeRef::Value(_) => {
-								panic!("TODO: Value imports");
+							ComponentTypeRef::Value(val) => match val {
+								ComponentValType::Primitive(p) => {
+									c.imports.insert(name, component::ComponentValType::Primitive((&p).into()));
+									c.values.push(component::ValueDecl::Imported(name));
+								},
+								ComponentValType::Type(idx) => {
+									c.imports.insert(name, component::ComponentValType::Type(idx));
+									c.values.push(component::ValueDecl::Imported(name));
+								},
 							},
-							ComponentTypeRef::Type(_, _) => {
-								panic!("TODO: Type imports");
+							ComponentTypeRef::Type(_, idx) => {
+								c.imports.insert(name, component::ComponentValType::Type(idx));
+								c.types.push(component::ComponentTypeDecl::Imported(name));
 							},
 							ComponentTypeRef::Component(idx) => {
-								c.imports.insert(name, component::TypeIndex(idx));
+								c.imports.insert(name, component::ComponentValType::Type(idx));
 								c.components.push(component::ComponentDecl::Imported(name));
 							},
 						};
@@ -116,22 +129,21 @@ fn parse_internal(mut bytes: &[u8]) -> anyhow::Result<String> {
 					for alias in alias_section_reader {
 						match alias? {
 							Alias::InstanceExport { kind, instance_index, name: export } => {
-								let instance = component::CoreInstanceIndex(instance_index);
 								match kind {
 									wasmparser::ExternalKind::Func => {
-										c.core_funcs.push(component::Alias::InstanceExport { instance, export });
+										c.core_funcs.push(component::CoreAlias::InstanceExport { instance: instance_index, export });
 									},
 									wasmparser::ExternalKind::Table => {
-										c.tables.push(component::Alias::InstanceExport { instance, export });
+										c.tables.push(component::CoreAlias::InstanceExport { instance: instance_index, export });
 									},
 									wasmparser::ExternalKind::Memory => {
-										c.memories.push(component::Alias::InstanceExport { instance, export });
+										c.memories.push(component::CoreAlias::InstanceExport { instance: instance_index, export });
 									},
 									wasmparser::ExternalKind::Global => {
-										c.globals.push(component::Alias::InstanceExport { instance, export });
+										c.globals.push(component::CoreAlias::InstanceExport { instance: instance_index, export });
 									},
 									wasmparser::ExternalKind::Tag => {
-										c.tags.push(component::Alias::InstanceExport { instance, export });
+										c.tags.push(component::CoreAlias::InstanceExport { instance: instance_index, export });
 									},
 								}
 							}
@@ -142,26 +154,37 @@ fn parse_internal(mut bytes: &[u8]) -> anyhow::Result<String> {
 					for component_alias in component_alias_section_reader {
 						match component_alias? {
 							ComponentAlias::InstanceExport { kind, instance_index, name: export } => {
-								let instance = component::InstanceIndex(instance_index);
 								match kind {
-									wasmparser::ComponentExternalKind::Module => {
-										c.modules.push(component::ModuleDecl::Alias(component::ComponentAlias::InstanceExport { instance, export }));
-									},
-									wasmparser::ComponentExternalKind::Component => {
-										c.components.push(component::ComponentDecl::Alias(component::ComponentAlias::InstanceExport { instance, export }));
-									},
-									wasmparser::ComponentExternalKind::Instance => {
-										c.instances.push(component::ComponentInstanceDecl::Alias(component::ComponentAlias::InstanceExport { instance, export }));
-									},
-									wasmparser::ComponentExternalKind::Func => {
-										c.funcs.push(component::FuncDecl::Alias(component::ComponentAlias::InstanceExport { instance, export }));
-									},
-									wasmparser::ComponentExternalKind::Value => {
-										c.values.push(component::ValueDecl::Alias(component::ComponentAlias::InstanceExport { instance, export }));
-									},
-									wasmparser::ComponentExternalKind::Type => {
-										// c.types.push(component::ComponentAlias::InstanceExport { instance, export });
-									},
+									wasmparser::ComponentExternalKind::Module => 
+										c.modules.push(component::ModuleDecl::Alias(component::ComponentAlias::InstanceExport {
+											instance: instance_index,
+											export
+										})),
+									wasmparser::ComponentExternalKind::Component => 
+										c.components.push(component::ComponentDecl::Alias(component::ComponentAlias::InstanceExport {
+											instance: instance_index,
+											export
+										})),
+									wasmparser::ComponentExternalKind::Instance =>
+										c.instances.push(component::ComponentInstanceDecl::Alias(component::ComponentAlias::InstanceExport {
+											instance: instance_index,
+											export
+										})),
+									wasmparser::ComponentExternalKind::Func =>
+										c.funcs.push(component::FuncDecl::Alias(component::ComponentAlias::InstanceExport {
+											instance: instance_index,
+											export
+										})),
+									wasmparser::ComponentExternalKind::Value =>
+										c.values.push(component::ValueDecl::Alias(component::ComponentAlias::InstanceExport {
+											instance: instance_index,
+											export
+										})),
+									wasmparser::ComponentExternalKind::Type =>
+										c.types.push(component::ComponentTypeDecl::Alias(component::ComponentAlias::InstanceExport {
+											instance: instance_index,
+											export
+										})),
 								}
 							},
 							ComponentAlias::Outer { kind, count, index } => {
@@ -173,24 +196,23 @@ fn parse_internal(mut bytes: &[u8]) -> anyhow::Result<String> {
 										}.into());
 									},
 									ComponentOuterAliasKind::CoreType => {
-										// c.core_types.push(component::ComponentAlias::Outer {
-										// 	count,
-										// 	reference: component::TypeIndex(index)
-										// }.into());
+										c.core_types.push(component::CoreTypeDecl::Alias(component::ComponentAlias::Outer {
+											count,
+											reference: component::CoreTypeIndex(index)
+										}.into()));
 									},
 									ComponentOuterAliasKind::Type => {
-										// c.types.push(component::ComponentAlias::Outer {
-										// 	count,
-										// 	reference: component::TypeIndex(index)
-										// }.into());
+										c.types.push(component::ComponentTypeDecl::Alias(component::ComponentAlias::Outer {
+											count,
+											reference: component::TypeIndex(index)
+										}.into()));
 									},
 									ComponentOuterAliasKind::Component => {
 										c.components.push(component::ComponentAlias::Outer {
 											count,
 											reference: component::ComponentIndex(index)
 										}.into());
-									}
-									_ => {},
+									},
 								}
 							},
 						}
@@ -205,7 +227,7 @@ fn parse_internal(mut bytes: &[u8]) -> anyhow::Result<String> {
 					}
 				},
 
-				// Core module sections ignored
+				// Component unsupported core module sections ignored
 				// CustomSection { name, .. } => {},
 				section => {
 					dbg!(section);
@@ -230,7 +252,7 @@ mod tests {
 		let serialized = parse(&wasm).unwrap();
 		assert_eq!(
 			serialized,
-			r#"{"modules":[{"module":{"start":93,"end":1844291}},{"module":{"start":1844324,"end":1844440}},{"module":{"start":1844442,"end":1844516}}],"components":[],"instances":[{"type":"imported-instance","specifier":"cache-0.1.0"},{"type":"imported-instance","specifier":"backend-0.1.0"},{"type":"module","index":1,"imports":{}},{"type":"module-from-exports","exports":{"get":{"sort":"function","idx":0},"put":{"sort":"function","idx":1}}},{"type":"module-from-exports","exports":{"fetch":{"sort":"function","idx":2}}},{"type":"module","index":0,"imports":{"backend-0.1.0":4,"cache-0.1.0":3}},{"type":"module-from-exports","exports":{"$imports":{"sort":"table","idx":0},"0":{"sort":"function","idx":6},"1":{"sort":"function","idx":7},"2":{"sort":"function","idx":8}}},{"type":"module","index":2,"imports":{"":6}},{"type":"component-from-exports","exports":{"fetch":{"sort":"function","idx":10}}}],"types":[{"interface":{"list":{"primitive":"u8"}}},{"interface":{"option":{"type":0}}},{"function":{"params":[["key",{"primitive":"string"}]],"result":{"type":1}}},{"function":{"params":[["key",{"primitive":"string"}],["value",{"type":0}]],"result":{"primitive":"unit"}}},{"instance":[{"outerType":{"count":1,"index":2}},{"export":{"name":"get","ty":0}},{"outerType":{"count":1,"index":3}},{"export":{"name":"put","ty":1}}]},{"function":{"params":[["url",{"primitive":"string"}]],"result":{"type":0}}},{"instance":[{"outerType":{"count":1,"index":5}},{"export":{"name":"fetch","ty":0}}]}],"functions":[{"type":"alias","instance":2,"export":"0"},{"type":"alias","instance":2,"export":"1"},{"type":"alias","instance":2,"export":"2"},{"type":"alias","instance":0,"export":"get"},{"type":"alias","instance":0,"export":"put"},{"type":"alias","instance":1,"export":"fetch"},{"type":"lower","func_index":3,"encoding":"utf8","into":5},{"type":"lower","func_index":4,"encoding":"utf8","into":5},{"type":"lower","func_index":5,"encoding":"utf8","into":5},{"type":"alias","instance":5,"export":"backend-0.1.0#fetch"},{"type":"lift","type_index":5,"func_index":9,"encoding":"utf8","into":5}],"values":[],"tables":[{"instance":2,"export":"$imports"}],"memories":[],"globals":[],"tags":[],"imports":{"backend-0.1.0":6,"cache-0.1.0":4},"exports":{"backend-0.1.0":{"sort":"instance","idx":8}}}"#
+			r#"{"modules":[{"module":{"start":129,"end":1863668}},{"module":{"start":1863670,"end":1863780}},{"module":{"start":1863782,"end":1863850}}],"components":[],"core_instances":[{"kind":"instantiate","value":{"index":1,"imports":{}}},{"kind":"from-exports","value":{"get":{"sort":"func","value":0},"put":{"sort":"func","value":1}}},{"kind":"from-exports","value":{"fetch":{"sort":"func","value":2}}},{"kind":"instantiate","value":{"index":0,"imports":{"backend-0.1.0":{"sort":"instance","value":2},"cache-0.1.0":{"sort":"instance","value":1}}}},{"kind":"from-exports","value":{"$imports":{"sort":"table","value":0},"0":{"sort":"func","value":4},"1":{"sort":"func","value":5},"2":{"sort":"func","value":6}}},{"kind":"instantiate","value":{"index":2,"imports":{"":{"sort":"instance","value":4}}}}],"instances":[{"kind":"imported","value":"cache-0.1.0"},{"kind":"imported","value":"backend-0.1.0"},{"kind":"from-exports","value":{"fetch":{"sort":"func","value":3}}}],"core_funcs":[{"instance":0,"export":"0"},{"instance":0,"export":"1"},{"instance":0,"export":"2"},{"instance":3,"export":"canonical_abi_realloc"},{"instance":3,"export":"backend-0.1.0#fetch"}],"funcs":[{"kind":"alias","value":{"instance":0,"export":"get"}},{"kind":"alias","value":{"instance":0,"export":"put"}},{"kind":"alias","value":{"instance":1,"export":"fetch"}},{"kind":"canonical","value":{"kind":"lower","value":{"func_index":0,"options":{"memory":0,"realloc":3}}}},{"kind":"canonical","value":{"kind":"lower","value":{"func_index":1,"options":{"memory":0,"realloc":3}}}},{"kind":"canonical","value":{"kind":"lower","value":{"func_index":2,"options":{"memory":0,"realloc":3}}}},{"kind":"canonical","value":{"kind":"lift","value":{"core_func_index":7,"type_index":5,"options":{"memory":0,"realloc":3}}}}],"core_types":[],"types":[{"kind":"defined","value":{"type":"list","value":{"type":"primitive","value":"u8"}}},{"kind":"defined","value":{"type":"option","value":{"type":"type","value":0}}},{"kind":"func","value":{"params":[["key",{"type":"primitive","value":"string"}]],"result":{"type":"type","value":1}}},{"kind":"func","value":{"params":[["key",{"type":"primitive","value":"string"}],["value",{"type":"type","value":0}]],"result":{"type":"primitive","value":"unit"}}},{"kind":"instance","value":{"coreTypes":[],"types":[{"kind":"alias","value":{"count":1,"reference":2}},{"kind":"alias","value":{"count":1,"reference":3}}],"exports":{"get":{"sort":"func","value":0},"put":{"sort":"func","value":1}}}},{"kind":"func","value":{"params":[["url",{"type":"primitive","value":"string"}]],"result":{"type":"type","value":0}}},{"kind":"instance","value":{"coreTypes":[],"types":[{"kind":"alias","value":{"count":1,"reference":5}}],"exports":{"fetch":{"sort":"func","value":0}}}}],"core_values":[],"values":[],"tables":[{"instance":0,"export":"$imports"}],"memories":[{"instance":3,"export":"memory"}],"globals":[],"tags":[],"imports":{"backend-0.1.0":{"type":"type","value":6},"cache-0.1.0":{"type":"type","value":4}},"exports":{"backend-0.1.0":{"sort":"instance","value":2}}}"#
 		);
 	}
 }
