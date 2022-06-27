@@ -56,7 +56,7 @@ This can be used in the browser or Node.js via eg:
 <script type="module">
   import { Component } from './js/components-polyfill.js';
 
-  const component = await Component.load('./compiled.json', 2);
+  const component = await Component.load('./compiled.json', 3);
 
   // logs the type structure for the component imports
   component.getImportTypes();
@@ -74,7 +74,7 @@ This can be used in the browser or Node.js via eg:
 </script>
 ```
 
-> The number provided to `Component.load(url, cnt)` is the number of core Wasm binaries that are co-located with the component serialization. This optional argument allows parallel fetching for all resources without not found errors.
+> The second number argument provided to `Component.load` is the number of core Wasm binaries that are co-located with the component serialization. This optional argument allows immediate parallel fetching of the core wasm modules, instead of needing to load the JSON serialization first.
 
 ### In-browser Compilation
 
