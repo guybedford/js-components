@@ -88,14 +88,17 @@ export class Component {
   static async load (url, coreModuleCnt) {
     if (!url.endsWith('.json')) throw new Error(`Must load a component from a URL ending in ".json"`);
     // First fetch the URL JSON
-    const componentPromise = fetch(url).then(res => res.json());
+    const componentPromise = typeof fetch === 'undefined' ? JSON.parse(fs.readFileSync(url)) : fetch(url).then(res => res.json());
     // If we don't know the number of core modules, wait on the JSON first
     if (typeof coreModuleCnt !== 'number')
       coreModuleCnt = (await componentPromise).modules.length;
     // Then replace .json with the index and .wasm to get the core modules
     const coreModules = await Promise.all(
       [...Array(coreModuleCnt)]
-      .map((_, i) => WebAssembly.compileStreaming(fetch(url.slice(0, -5) + (i + 1) + '.wasm')))
+      .map((_, i) =>
+        WebAssembly.compileStreaming && typeof fetch !== 'undefined'
+        ? WebAssembly.compileStreaming(fetch(url.slice(0, -5) + (i + 1) + '.wasm'))
+        : WebAssembly.compile(fs.readFileSync(url.slice(0, -5) + (i + 1) + '.wasm')))
     );
     return new Component(await componentPromise, coreModules);
   }
