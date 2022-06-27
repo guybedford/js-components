@@ -7,27 +7,33 @@
   <body>
     <script type="module">
       import { Component } from './components-polyfill.js';
+      import { runtimeCompile } from './runtime-compiler.js';
 
-      const c = new Component(await (await fetch("service.wasm")).arrayBuffer());
+      // compilation is supported both AOT or at runtime
+      const { component, coreModules } = await runtimeCompile(await (await fetch("service.wasm")).arrayBuffer());
 
-      await c.compile();
-      // console.log(c.getImportTypes());
+      const c = new Component(component, coreModules);
+
+      console.log('Import Types:');
+      console.log(c.getImportTypes());
       
       const cache = {};
       c.link({
+        // backend implementation
         'backend-0.1.0': {
-          fetch: (x) => {
-            console.log('FETCH');
+          fetch (x) {
+            console.log('FETCH', x);
             return new Uint8Array([...`${Math.random()}`.slice(2, 5)]);
           }
         },
+        // simple cache implementation
         'cache-0.1.0': {
-          get: (key) => {
-            console.log('GET');
+          get (key) {
+            console.log('GET', key);
             return cache[key] || null;
           },
-          put: (key, value) => {
-            console.log('PUT');
+          put (key, value) {
+            console.log('PUT', key, value);
             cache[key] = value;
           }
         }
@@ -35,6 +41,7 @@
 
       await c.execute();
 
+      // first fetch calls the backend, second gets cached
       console.log(c.exports['backend-0.1.0'].fetch('test'));
       console.log(c.exports['backend-0.1.0'].fetch('test'));
     </script>

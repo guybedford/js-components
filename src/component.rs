@@ -46,7 +46,7 @@ pub struct GlobalIndex(pub u32);
 pub struct TagIndex(pub u32);
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "sort", content = "value", rename_all = "camelCase")]
+#[serde(tag = "sort", content = "idx", rename_all = "camelCase")]
 pub enum CoreRef {
 	Func(FuncIndex),
 	Table(TableIndex),
@@ -68,7 +68,7 @@ impl From<(&wasmparser::ExternalKind, u32)> for CoreRef {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "sort", content = "value", rename_all = "camelCase")]
+#[serde(tag = "sort", content = "idx", rename_all = "camelCase")]
 pub enum ComponentRef {
 	Module(ModuleIndex),
 	Func(FuncIndex),
@@ -99,40 +99,43 @@ impl From<(&wasmparser::InstantiationArgKind, u32)> for ComponentRef {
 	}
 }
 
-impl From<&wasmparser::ComponentTypeRef> for ComponentRef {
-	fn from(type_ref: &wasmparser::ComponentTypeRef) -> ComponentRef {
+impl From<&wasmparser::ComponentTypeRef> for ComponentValType {
+	fn from(type_ref: &wasmparser::ComponentTypeRef) -> ComponentValType {
 		match type_ref {
-			wasmparser::ComponentTypeRef::Module(idx) => ComponentRef::Module(ModuleIndex(*idx)),
-			wasmparser::ComponentTypeRef::Component(idx) => ComponentRef::Component(ComponentIndex(*idx)),
-			wasmparser::ComponentTypeRef::Instance(idx) => ComponentRef::Instance(InstanceIndex(*idx)),
-			wasmparser::ComponentTypeRef::Func(idx) => ComponentRef::Func(FuncIndex(*idx)),
+			// all type indexes are just type indexes, regardless of sort
+			wasmparser::ComponentTypeRef::Module(idx) => ComponentValType::Type(*idx),
+			wasmparser::ComponentTypeRef::Component(idx) => ComponentValType::Type(*idx),
+			wasmparser::ComponentTypeRef::Instance(idx) => ComponentValType::Type(*idx),
+			wasmparser::ComponentTypeRef::Func(idx) => ComponentValType::Type(*idx),
 			wasmparser::ComponentTypeRef::Value(v) => match v {
-				wasmparser::ComponentValType::Primitive(_) => panic!("Unexpected primitive"),
-				wasmparser::ComponentValType::Type(idx) => ComponentRef::Type(TypeIndex(*idx)),
+				wasmparser::ComponentValType::Primitive(p) => ComponentValType::Primitive(p.into()),
+				wasmparser::ComponentValType::Type(idx) => ComponentValType::Type(*idx),
 			},
-			wasmparser::ComponentTypeRef::Type(_, idx) => ComponentRef::Type(TypeIndex(*idx)),
+			wasmparser::ComponentTypeRef::Type(_, idx) => ComponentValType::Type(*idx),
 		}
-	}
+	}	
 }
 
 // Component Sections
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Component<'a> {
+	pub ops: Vec<ComponentOp>,
 	pub modules: Vec<ModuleDecl<'a>>,
 	pub components: Vec<ComponentDecl<'a>>,
 	pub core_instances: Vec<CoreInstanceDecl<'a>>,
 	pub instances: Vec<ComponentInstanceDecl<'a>>,
-	pub core_funcs: Vec<CoreAlias<'a>>,
+	pub core_funcs: Vec<CoreFuncDecl<'a>>,
 	pub funcs: Vec<FuncDecl<'a>>,
 	pub core_types: Vec<CoreTypeDecl<'a>>,
 	pub types: Vec<ComponentTypeDecl<'a>>,
-	pub core_values: Vec<CoreAlias<'a>>,
+	pub core_values: Vec<CoreAliasDecl<'a>>,
 	pub values: Vec<ValueDecl<'a>>,
-	pub tables: Vec<CoreAlias<'a>>,
-	pub memories: Vec<CoreAlias<'a>>,
-	pub globals: Vec<CoreAlias<'a>>,
-	pub tags: Vec<CoreAlias<'a>>,
+	pub tables: Vec<CoreAliasDecl<'a>>,
+	pub memories: Vec<CoreAliasDecl<'a>>,
+	pub globals: Vec<CoreAliasDecl<'a>>,
+	pub tags: Vec<CoreAliasDecl<'a>>,
 	pub imports: BTreeMap<&'a str, ComponentValType>,
 	pub exports: BTreeMap<&'a str, ComponentRef>,
 }
@@ -140,6 +143,7 @@ pub struct Component<'a> {
 impl<'a> Component<'a> {
 	pub fn new() -> Component<'a> {
 		Component {
+			ops: Vec::new(),
 			modules: Vec::new(),
 			components: Vec::new(),
 			instances: Vec::new(),
@@ -161,9 +165,16 @@ impl<'a> Component<'a> {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(untagged, rename_all = "camelCase")]
-pub enum CoreAlias<'a> {
-	InstanceExport { instance: u32, export: &'a str },
+#[serde(tag = "type", content = "idx", rename_all = "kebab-case")]
+pub enum ComponentOp {
+	CoreInstance(CoreInstanceIndex),
+	ComponentInstance(InstanceIndex),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CoreAliasDecl<'a> {
+	Alias { instance: u32, export: &'a str },
 }
 
 #[derive(Debug, Serialize)]
@@ -176,7 +187,7 @@ pub enum ComponentAlias<'a, Ref = ComponentRef> {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ModuleDecl<'a> {
-	Imported(&'a str),
+	Imported { specifier: &'a str },
 	Module { start: usize, end: usize },
 	Alias(ComponentAlias<'a, ModuleIndex>),
 }
@@ -190,7 +201,7 @@ impl<'a> From<ComponentAlias<'a, ModuleIndex>> for ModuleDecl<'a> {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ComponentDecl<'a> {
-	Imported(&'a str),
+	Imported { specifier: &'a str },
 	// TODO: Nested components
 	// Component(Component<'a>),
 	Alias(ComponentAlias<'a, ComponentIndex>),
@@ -203,13 +214,13 @@ impl<'a> From<ComponentAlias<'a, ComponentIndex>> for ComponentDecl<'a> {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum CoreInstanceDecl<'a> {
 	Instantiate {
 		index: ModuleIndex,
-		imports: BTreeMap<&'a str, ComponentRef>,
+		imports: BTreeMap<&'a str, InstanceIndex>,
 	},
-	FromExports(BTreeMap<&'a str, CoreRef>),
+	FromExports { exports: BTreeMap<&'a str, CoreRef> },
 }
 
 impl<'a> From<wasmparser::Instance<'a>> for CoreInstanceDecl<'a> {
@@ -218,7 +229,10 @@ impl<'a> From<wasmparser::Instance<'a>> for CoreInstanceDecl<'a> {
 			wasmparser::Instance::Instantiate { module_index, args } => {
 				let mut imports = BTreeMap::new();
 				for arg in args.iter() {
-					imports.insert(arg.name, (&arg.kind, arg.index).into());
+					if !matches!(arg.kind, wasmparser::InstantiationArgKind::Instance) {
+						panic!("Unexpected instantiation index type");
+					}
+					imports.insert(arg.name, InstanceIndex(arg.index));
 				}
 				CoreInstanceDecl::Instantiate {
 					index: ModuleIndex(module_index),
@@ -230,21 +244,21 @@ impl<'a> From<wasmparser::Instance<'a>> for CoreInstanceDecl<'a> {
 				for arg in args.iter() {
 					exports.insert(arg.name, (&arg.kind, arg.index).into());
 				}
-				CoreInstanceDecl::FromExports(exports)
+				CoreInstanceDecl::FromExports { exports }
 			}
 		}
 	}
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ComponentInstanceDecl<'a> {
-	Imported(&'a str),
+	Imported { specifier: &'a str },
 	Instantiate {
 		index: ComponentIndex,
-		imports: BTreeMap<&'a str, ComponentRef>,
+		imports: BTreeMap<&'a str, InstanceIndex>,
 	},
-	FromExports(BTreeMap<&'a str, ComponentRef>),
+	FromExports { exports: BTreeMap<&'a str, ComponentRef> },
 	Alias(ComponentAlias<'a, InstanceIndex>),
 }
 
@@ -257,7 +271,10 @@ impl<'a> From<wasmparser::ComponentInstance<'a>> for ComponentInstanceDecl<'a> {
 			} => {
 				let mut imports = BTreeMap::new();
 				for arg in args.iter() {
-					imports.insert(arg.name, (&arg.kind, arg.index).into());
+					if !matches!(arg.kind, wasmparser::ComponentExternalKind::Instance) {
+						panic!("Unexpected instantiation index type");
+					}
+					imports.insert(arg.name, InstanceIndex(arg.index));
 				}
 				ComponentInstanceDecl::Instantiate {
 					index: ComponentIndex(component_index),
@@ -269,55 +286,36 @@ impl<'a> From<wasmparser::ComponentInstance<'a>> for ComponentInstanceDecl<'a> {
 				for arg in args.iter() {
 					exports.insert(arg.name, (&arg.kind, arg.index).into());
 				}
-				ComponentInstanceDecl::FromExports(exports)
+				ComponentInstanceDecl::FromExports { exports }
 			}
 		}
 	}
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum FuncDecl<'a> {
-	Imported(&'a str),
-	Canonical(CanonicalFunction),
+	Imported {
+		specifier: &'a str
+	},
+	Lifted {
+		#[serde(rename = "funcIdx")]
+		func_idx: u32,
+		#[serde(rename = "typeIdx")]
+		type_idx: u32,
+		opts: CanonicalOptions,
+	},
 	Alias(ComponentAlias<'a, FuncIndex>),
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
-pub enum CanonicalFunction {
-	Lift {
-		core_func_index: u32,
-		type_index: u32,
-		options: CanonicalOptions,
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum CoreFuncDecl<'a> {
+	Lowered {
+		idx: u32,
+		opts: CanonicalOptions,
 	},
-	Lower {
-		func_index: u32,
-		options: CanonicalOptions,
-	},
-}
-
-impl<'a> From<wasmparser::CanonicalFunction> for CanonicalFunction {
-	fn from(f: wasmparser::CanonicalFunction) -> CanonicalFunction {
-		match f {
-			wasmparser::CanonicalFunction::Lift {
-				core_func_index,
-				type_index,
-				options,
-			} => CanonicalFunction::Lift {
-				type_index,
-				core_func_index,
-				options: options.into()
-			},
-			wasmparser::CanonicalFunction::Lower {
-				func_index,
-				options,
-			} => CanonicalFunction::Lower {
-				func_index,
-				options: options.into()
-			},
-		}
-	}
+	Alias(ComponentAlias<'a, CoreFuncIndex>),
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -330,12 +328,6 @@ pub enum Encoding {
 	CompactUTF16,
 }
 
-impl Default for Encoding {
-	fn default() -> Self {
-		Encoding::UTF8
-	}
-}
-
 fn is_default<T: Default + PartialEq>(t: &T) -> bool {
 	t == &T::default()
 }
@@ -344,7 +336,7 @@ fn is_default<T: Default + PartialEq>(t: &T) -> bool {
 #[serde(rename_all = "camelCase")]
 pub struct CanonicalOptions {
 	#[serde(skip_serializing_if = "is_default")]
-	encoding: Encoding,
+	encoding: Option<Encoding>,
 	#[serde(skip_serializing_if = "is_default")]
 	memory: Option<u32>,
 	#[serde(skip_serializing_if = "is_default")]
@@ -356,7 +348,7 @@ pub struct CanonicalOptions {
 impl CanonicalOptions {
 	fn new() -> CanonicalOptions {
 		CanonicalOptions {
-			encoding: Encoding::UTF8,
+			encoding: None,
 			memory: None,
 			realloc: None,
 			post_return: None,
@@ -369,9 +361,9 @@ impl From<Box<[wasmparser::CanonicalOption]>> for CanonicalOptions {
 		let mut options = CanonicalOptions::new();
 		for d in o.iter() {
 			match d {
-				wasmparser::CanonicalOption::UTF8 => options.encoding = Encoding::UTF8,
-				wasmparser::CanonicalOption::UTF16 => options.encoding = Encoding::UTF16,
-				wasmparser::CanonicalOption::CompactUTF16 => options.encoding = Encoding::CompactUTF16,
+				wasmparser::CanonicalOption::UTF8 => options.encoding = Some(Encoding::UTF8),
+				wasmparser::CanonicalOption::UTF16 => options.encoding = Some(Encoding::UTF16),
+				wasmparser::CanonicalOption::CompactUTF16 => options.encoding = Some(Encoding::CompactUTF16),
 				wasmparser::CanonicalOption::Memory(idx) => options.memory = Some(*idx),
 				wasmparser::CanonicalOption::Realloc(idx) => options.realloc = Some(*idx),
 				wasmparser::CanonicalOption::PostReturn(idx) => options.post_return = Some(*idx),
@@ -382,19 +374,19 @@ impl From<Box<[wasmparser::CanonicalOption]>> for CanonicalOptions {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ValueDecl<'a> {
-	Imported(&'a str),
+	Imported { specifier: &'a str },
 	Alias(ComponentAlias<'a, ValueIndex>),
 }
 
 // Types
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum CoreTypeDecl<'a> {
 	// Pending core imported types
-	// Imported(&'a str, &'a str),
+	// Imported { specifier: &'a str, &'a str },
 	Module(CoreModuleType<'a>),
 	Func(FuncType),
 	Alias(ComponentAlias<'a, CoreTypeIndex>),
@@ -441,7 +433,7 @@ impl<'a> From<&wasmparser::CoreType<'a>> for CoreTypeDecl<'a> {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum CoreType {
 	Func(FuncType),
 	// Core alias support...
@@ -466,7 +458,7 @@ impl<'a> From<&wasmparser::Type> for CoreType {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub struct CoreModuleType<'a> {
 	types: Vec<CoreType>,
 	exports: BTreeMap<&'a str, TypeRef>,
@@ -484,7 +476,7 @@ impl<'a> CoreModuleType<'a> {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum TypeRef {
 	Func(u32),
 	Table(TableType),
@@ -569,7 +561,7 @@ impl From<wasmparser::ValType> for ValType {
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", content = "value", rename_all = "camelCase")]
 pub enum ComponentTypeDecl<'a> {
-	Imported(&'a str),
+	Imported { specifier: &'a str },
 	Alias(ComponentAlias<'a, TypeIndex>),
 	Defined(ComponentDefinedType<'a>),
 	Func(ComponentFuncType<'a>),
@@ -683,7 +675,7 @@ impl<'a> From<&wasmparser::ComponentType<'a>> for ComponentTypeDecl<'a> {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase", tag = "type", content = "value")]
+#[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum ComponentDefinedType<'a> {
 	Primitive(PrimitiveValType),
 	Record(BTreeMap<&'a str, ComponentValType>),
@@ -799,7 +791,7 @@ impl From<&wasmparser::PrimitiveValType> for PrimitiveValType {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase", tag = "type", content = "value")]
+#[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum ComponentValType {
 	Primitive(PrimitiveValType),
 	Type(u32),
@@ -860,7 +852,7 @@ impl<'a> From<&wasmparser::ComponentFuncType<'a>> for ComponentFuncType<'a> {
 pub struct ComponentInstanceType<'a> {
 	core_types: Vec<CoreTypeDecl<'a>>,
 	types: Vec<ComponentTypeDecl<'a>>,
-	exports: BTreeMap<&'a str, ComponentRef>,
+	exports: BTreeMap<&'a str, ComponentValType>,
 }
 
 impl<'a> ComponentInstanceType<'a> {
@@ -878,8 +870,8 @@ impl<'a> ComponentInstanceType<'a> {
 pub struct ComponentType<'a> {
 	core_types: Vec<CoreTypeDecl<'a>>,
 	types: Vec<ComponentTypeDecl<'a>>,
-	exports: BTreeMap<&'a str, ComponentRef>,
-	imports: BTreeMap<&'a str, ComponentRef>,
+	exports: BTreeMap<&'a str, ComponentValType>,
+	imports: BTreeMap<&'a str, ComponentValType>,
 }
 
 impl<'a> ComponentType<'a> {
