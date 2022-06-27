@@ -16,6 +16,7 @@ Component serialization is mostly complete, except for:
 
 * Start functions are not currently supported
 * Nested component binaries are not currently supported
+* The `postReturn` hook is yet to be implemented, and a hard-coded free function reference is still used for now (pending upstream updates).
 
 The polyfill implementation supports only a portion of the serialization constructs currently, but it is so far enough to run quite detailed examples.
 
