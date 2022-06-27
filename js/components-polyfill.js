@@ -180,6 +180,7 @@ function resolveCoreRef (expt, component) {
 
       const func = resolveComponentRef({ sort: 'func', idx: item.idx }, component);
       const funcType = resolveComponentType({ sort: 'func', idx: item.idx }, component.component);
+
       return generateLowering(func, funcType, memory, realloc, free);
     }
     default: throw new Error(`TODO: ${expt.sort} ${item.kind} core resolution`);
@@ -400,11 +401,11 @@ function generateLoweredReturnBinding (fromBinding, type, state, indent) {
     case 'option':
       code += `${indent}switch (${fromBinding}) {\n`;
       code += `${indent}  case null:\n`;
-      code += `${indent}    data_view(memory).setInt32(${state.retParam} + ${state.paramOffset}, 0, true);\n`;
+      code += `${indent}    data_view(memory).setInt8(${state.retParam} + ${state.paramOffset}, 0, true);\n`;
       code += `${indent}    break;\n`;
       code += `${indent}  default: {\n`;
-      code += `${indent}    data_view(memory).setInt32(${state.retParam} + ${state.paramOffset}, 1, true);\n`;
-      state.paramOffset += 8;
+      code += `${indent}    data_view(memory).setInt8(${state.retParam} + ${state.paramOffset}, 1, true);\n`;
+      state.paramOffset += 4;
       code += generateLoweredReturnBinding(fromBinding, type.value, state, `${indent}    `);
       code += `${indent}  }\n`;
       code += `${indent}}\n`;
@@ -416,9 +417,9 @@ function generateLoweredReturnBinding (fromBinding, type, state, indent) {
             case 'u8':
               code += `${indent}const ptr${++state.ptrCnt} = realloc(0, 0, 1, ${fromBinding}.length);\n`;
               code += `${indent}(new Uint8Array(memory.buffer, ptr${state.ptrCnt}, ${fromBinding}.length)).set(ret);\n`;
-              code += `${indent}data_view(memory).setInt32(${state.retParam} + ${state.paramOffset + 8}, ${fromBinding}.length, true);\n`;
+              code += `${indent}data_view(memory).setInt32(${state.retParam} + ${state.paramOffset + 4}, ${fromBinding}.length, true);\n`;
               code += `${indent}data_view(memory).setInt32(${state.retParam} + ${state.paramOffset}, ptr${state.ptrCnt}, true);\n`;
-              state.paramOffset += 8;
+              state.paramOffset += 4;
               break;
             default: throw new Error(`TODO: ${type.value.value} list primitive return lowering`);
           }
@@ -538,7 +539,7 @@ function generateLiftedReturnBinding (intoBinding, type, state, indent) {
       break;
     case 'list':
       code += `${indent}const ptr${++state.ptrCnt} = data_view(memory).getInt32(ret + ${state.retOffset}, true);\n`;
-      state.retOffset += 8;
+      state.retOffset += 4;
       code += `${indent}const len${state.ptrCnt} = data_view(memory).getInt32(ret + ${state.retOffset}, true);\n`;
       state.retOffset += 4;
       switch (type.value.type) {
