@@ -1,0 +1,13 @@
+[package]
+name = "js-components"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["lib"]
+
+[dependencies]
+anyhow = "1.0.57"
+serde_json = "1.0.80"
+serde = { version = "1.0.137", features = ["derive"] }
+wasmparser = "0.86.0"

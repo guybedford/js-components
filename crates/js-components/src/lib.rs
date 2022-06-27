@@ -1,21 +1,12 @@
 use anyhow::anyhow;
-use wasm_bindgen::prelude::*;
 use wasmparser::{
-	Alias, Chunk, CanonicalFunction, ComponentAlias, ComponentExport, ComponentImport, ComponentOuterAliasKind,
-	ComponentTypeRef, ComponentValType, Encoding, Parser, Payload::*,
+	Alias, CanonicalFunction, Chunk, ComponentAlias, ComponentExport, ComponentImport,
+	ComponentOuterAliasKind, ComponentTypeRef, ComponentValType, Encoding, Parser, Payload::*,
 };
 
 mod component;
 
-#[wasm_bindgen]
-pub fn parse(bytes: &[u8]) -> Result<String, String> {
-	match parse_internal(bytes) {
-		Ok(serialized) => Ok(serialized),
-		Err(err) => Err(String::from(format!("{:?}", err))),
-	}
-}
-
-fn parse_internal(mut bytes: &[u8]) -> anyhow::Result<String> {
+pub fn parse(mut bytes: &[u8]) -> anyhow::Result<String> {
 	let mut parser = Parser::new(0);
 	let mut parsers = Vec::new();
 	let mut last_consumed = 0;
@@ -271,7 +262,7 @@ mod tests {
 
 	#[test]
 	fn basic_parse() {
-		let file = "service.wasm";
+		let file = "test/service.wasm";
 		let wasm = std::fs::read(&file).unwrap();
 		let serialized = parse(&wasm).unwrap();
 		assert_eq!(

@@ -1,4 +1,4 @@
-import init, { parse } from "./pkg/js_components.js";
+import init, { parse } from "./js_components_wasm.js";
 
 /**
  * @param {ArrayBuffer} binary 
@@ -7,7 +7,7 @@ import init, { parse } from "./pkg/js_components.js";
  *   coreModules: WebAssembly.Module[]
  * }}
  */
-export async function runtimeCompile (binary) {
+export async function compileComponent (binary) {
   await init();
   const component = JSON.parse(parse(new Uint8Array(binary)));
   const coreModules = await Promise.all(

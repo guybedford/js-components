@@ -21,6 +21,12 @@
  */
 
 /**
+ * @typedef {object} ComponentDecl
+ * 
+ * @property {string} kind
+ */
+
+/**
  * @typedef {object} ComponentType
  * 
  * @property {ComponentDecl[]} coreTypes

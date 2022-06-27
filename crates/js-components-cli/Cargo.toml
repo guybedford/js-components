@@ -1,0 +1,7 @@
+[package]
+name = "js-components-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+js-components = { path = "../js-components" }
