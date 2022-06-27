@@ -6,11 +6,11 @@
   </head>
   <body>
     <script type="module">
-      import { Component } from './components-polyfill.js';
-      import { runtimeCompile } from './runtime-compiler.js';
+      import { Component } from '../js/components-polyfill.js';
+      import { compileComponent } from '../wasm/pkg/component-compiler-wasm.js';
 
       // compilation is supported both AOT or at runtime
-      const { component, coreModules } = await runtimeCompile(await (await fetch("service.wasm")).arrayBuffer());
+      const { component, coreModules } = await compileComponent(await (await fetch("service.wasm")).arrayBuffer());
 
       const c = new Component(component, coreModules);
 
