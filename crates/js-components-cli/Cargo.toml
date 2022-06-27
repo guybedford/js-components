@@ -3,5 +3,11 @@ name = "js-components-cli"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "js-components"
+path = "src/main.rs"
+
 [dependencies]
+anyhow = "1.0.57"
 js-components = { path = "../js-components" }
+serde_json = "1.0.80"
