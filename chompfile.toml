@@ -6,6 +6,12 @@ name = 'build'
 deps = [':build:wasm']
 
 [[task]]
+name = 'build:example'
+target = 'example/service.json'
+deps = ['build']
+run = './target/debug/js-components example/service.wasm -o example/service.json'
+
+[[task]]
 name = 'build:wasm'
 serial = true
 deps = ['wasm/pkg/js_components_wasm.js', 'wasm/pkg/component-compiler-wasm.js', 'wasm/pkg/package.json']

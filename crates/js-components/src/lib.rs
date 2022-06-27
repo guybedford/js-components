@@ -1,21 +1,20 @@
+use crate::component::Component;
 use anyhow::anyhow;
 use wasmparser::{
 	Alias, CanonicalFunction, Chunk, ComponentAlias, ComponentExport, ComponentImport,
 	ComponentOuterAliasKind, ComponentTypeRef, ComponentValType, Encoding, Parser, Payload::*,
 };
 
-mod component;
+pub mod component;
 
-pub fn parse(mut bytes: &[u8]) -> anyhow::Result<String> {
+pub fn parse(mut bytes: &[u8]) -> anyhow::Result<Component> {
 	let mut parser = Parser::new(0);
 	let mut parsers = Vec::new();
 	let mut last_consumed = 0;
 
 	let mut c = component::Component::new();
-	let mut byte_offset = 0;
 
 	loop {
-		byte_offset += last_consumed;
 		bytes = &bytes[last_consumed..];
 		let payload = match parser.parse(bytes, true)? {
 			Chunk::NeedMoreData(_) => unreachable!(),
@@ -26,8 +25,7 @@ pub fn parse(mut bytes: &[u8]) -> anyhow::Result<String> {
 		};
 
 		match payload {
-				Version { encoding, range, .. } => {
-					println!("RANGE: {:?}", &bytes[range.start..range.end]);
+				Version { encoding, .. } => {
 					if !matches!(encoding, Encoding::Component) {
 						return Err(anyhow!("Not a WebAssembly Component"));
 					}
@@ -251,9 +249,8 @@ pub fn parse(mut bytes: &[u8]) -> anyhow::Result<String> {
 		}
 	}
 
-	dbg!(&c);
-	let j = serde_json::to_string(&c)?;
-	Ok(j)
+	// dbg!(&c);
+	Ok(c)
 }
 
 #[cfg(test)]
@@ -264,7 +261,8 @@ mod tests {
 	fn basic_parse() {
 		let file = "test/service.wasm";
 		let wasm = std::fs::read(&file).unwrap();
-		let serialized = parse(&wasm).unwrap();
+		let c = parse(&wasm).unwrap();
+		let serialized = serde_json::to_string(&c).unwrap();
 		assert_eq!(
 			serialized,
 			r#"{"ops":[{"type":"component-instance","idx":0},{"type":"component-instance","idx":1},{"type":"core-instance","idx":0},{"type":"core-instance","idx":1},{"type":"core-instance","idx":2},{"type":"core-instance","idx":3},{"type":"core-instance","idx":4},{"type":"core-instance","idx":5},{"type":"component-instance","idx":2}],"modules":[{"module":{"start":129,"end":1863668}},{"module":{"start":1863670,"end":1863780}},{"module":{"start":1863782,"end":1863850}}],"components":[],"coreInstances":[{"kind":"instantiate","index":1,"imports":{}},{"kind":"from-exports","exports":{"get":{"sort":"func","idx":0},"put":{"sort":"func","idx":1}}},{"kind":"from-exports","exports":{"fetch":{"sort":"func","idx":2}}},{"kind":"instantiate","index":0,"imports":{"backend-0.1.0":2,"cache-0.1.0":1}},{"kind":"from-exports","exports":{"$imports":{"sort":"table","idx":0},"0":{"sort":"func","idx":4},"1":{"sort":"func","idx":5},"2":{"sort":"func","idx":6}}},{"kind":"instantiate","index":2,"imports":{"":4}}],"instances":[{"kind":"imported","specifier":"cache-0.1.0"},{"kind":"imported","specifier":"backend-0.1.0"},{"kind":"from-exports","exports":{"fetch":{"sort":"func","idx":3}}}],"coreFuncs":[{"kind":"alias","instance":0,"export":"0"},{"kind":"alias","instance":0,"export":"1"},{"kind":"alias","instance":0,"export":"2"},{"kind":"alias","instance":3,"export":"canonical_abi_realloc"},{"kind":"lowered","idx":0,"opts":{"encoding":"utf8","memory":0,"realloc":3}},{"kind":"lowered","idx":1,"opts":{"encoding":"utf8","memory":0,"realloc":3}},{"kind":"lowered","idx":2,"opts":{"encoding":"utf8","memory":0,"realloc":3}},{"kind":"alias","instance":3,"export":"backend-0.1.0#fetch"}],"funcs":[{"kind":"alias","instance":0,"export":"get"},{"kind":"alias","instance":0,"export":"put"},{"kind":"alias","instance":1,"export":"fetch"},{"kind":"lifted","funcIdx":7,"typeIdx":5,"opts":{"encoding":"utf8","memory":0,"realloc":3}}],"coreTypes":[],"types":[{"kind":"defined","value":{"type":"list","value":{"type":"primitive","value":"u8"}}},{"kind":"defined","value":{"type":"option","value":{"type":"type","value":0}}},{"kind":"func","value":{"params":[["key",{"type":"primitive","value":"string"}]],"result":{"type":"type","value":1}}},{"kind":"func","value":{"params":[["key",{"type":"primitive","value":"string"}],["value",{"type":"type","value":0}]],"result":{"type":"primitive","value":"unit"}}},{"kind":"instance","value":{"coreTypes":[],"types":[{"kind":"alias","value":{"count":1,"reference":2}},{"kind":"alias","value":{"count":1,"reference":3}}],"exports":{"get":{"type":"type","value":0},"put":{"type":"type","value":1}}}},{"kind":"func","value":{"params":[["url",{"type":"primitive","value":"string"}]],"result":{"type":"type","value":0}}},{"kind":"instance","value":{"coreTypes":[],"types":[{"kind":"alias","value":{"count":1,"reference":5}}],"exports":{"fetch":{"type":"type","value":0}}}}],"coreValues":[],"values":[],"tables":[{"kind":"alias","instance":0,"export":"$imports"}],"memories":[{"kind":"alias","instance":3,"export":"memory"}],"globals":[],"tags":[],"imports":{"backend-0.1.0":{"type":"type","value":6},"cache-0.1.0":{"type":"type","value":4}},"exports":{"backend-0.1.0":{"sort":"instance","idx":2}}}"#

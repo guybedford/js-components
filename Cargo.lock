@@ -62,7 +62,9 @@ dependencies = [
 name = "js-components-cli"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "js-components",
+ "serde_json",
 ]
 
 [[package]]
@@ -70,6 +72,7 @@ name = "js-components-wasm"
 version = "0.1.0"
 dependencies = [
  "js-components",
+ "serde_json",
  "wasm-bindgen",
 ]
 

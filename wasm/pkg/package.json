@@ -1,0 +1,10 @@
+{
+  "name": "js-components-wasm",
+  "version": "0.1.0",
+  "files": [
+    "component-compiler-wasm.js",
+    "js_components_wasm_bg.wasm",
+    "js_components_wasm.js"
+  ],
+  "exports": "./component-compiler-wasm.js"
+}

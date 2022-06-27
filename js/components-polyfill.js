@@ -55,6 +55,11 @@ export class Component {
     this.runtimeInstances = null;
   }
 
+  /**
+   * Get the import type interfaces for the component
+   * 
+   * @returns {Record<string, Object>}
+   */
   getImportTypes () {
     const imports = {};
     for (const impt of Object.keys(this.component.imports)) {
@@ -63,11 +68,43 @@ export class Component {
     return imports;
   }
 
+  /**
+   * Link the component imports
+   * 
+   * @param {Record<string, any>} imports
+   */
   link (imports) {
     if (this.imports) throw new Error('Cannot relink');
     this.imports = imports;
   }
 
+  /**
+   * Fetch and initialize a component from a pre-compiled JSON URL
+   * 
+   * @param {string | URL} url 
+   * @param {number} [coreModuleCnt]
+   * @returns {Promise<Component>}
+   */
+  static async load (url, coreModuleCnt) {
+    if (!url.endsWith('.json')) throw new Error(`Must load a component from a URL ending in ".json"`);
+    // First fetch the URL JSON
+    const componentPromise = fetch(url).then(res => res.json());
+    // If we don't know the number of core modules, wait on the JSON first
+    if (typeof coreModuleCnt !== 'number')
+      coreModuleCnt = (await componentPromise).modules.length;
+    // Then replace .json with the index and .wasm to get the core modules
+    const coreModules = await Promise.all(
+      [...Array(coreModuleCnt)]
+      .map((_, i) => WebAssembly.compileStreaming(fetch(url.slice(0, -5) + (i + 1) + '.wasm')))
+    );
+    return new Component(await componentPromise, coreModules);
+  }
+
+  /**
+   * Execute the component
+   * 
+   * @returns {Promise<Record<string, any>>} The component exports
+   */
   async execute () {
     if (this.runtimeInstances) throw new Error('Cannot reexecute');
     this.runtimeInstances = [];
