@@ -86,12 +86,12 @@ To use the in-browser compiler, load the Wasm compiler from the compiled `pkg` d
   import { compileComponent } from './wasm/pkg/component-compiler-wasm.js';
   import { Component } from './js/components-polyfill.js';
 
-  const { component, coreModules } = await compileComponent(await (await fetch("component.wasm")).arrayBuffer())
-  const component = new Component(component, coreModules);
+  const { component: serializedComponent, coreModules } = await compileComponent(await (await fetch("component.wasm")).arrayBuffer())
+  const component = new Component(serializedComponent, coreModules);
 </script>
 ```
 
-The `Component` returned can then be used identically to the AOT compilation case.
+The `Component` instance created can then be used identically to the AOT compilation case.
 
 ## Example
 
