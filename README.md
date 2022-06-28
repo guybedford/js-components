@@ -12,18 +12,19 @@ Inspired by https://github.com/concept-not-found/component-model-polyfill.
 
 ## Implementation Status
 
-Component serialization is mostly complete, except for:
+### Component Compilation
 
 * Start functions are not currently supported
 * Nested component binaries are not currently supported
 * The `postReturn` hook is yet to be implemented, and a hard-coded free function reference is still used for now (pending upstream updates).
+* JS binding wrappers are not currently generated ahead of time, this should ideally be handled via [wit-bindgen](https://github.com/bytecodealliance/wit-bindgen) directly, where a non-class-based per-function bindings generation with instrinsic injection would be useful for this, to get something closer to what the [polyfill works with](js/components-polyfill.js#L389).
 
-The polyfill implementation supports only a portion of the serialization constructs currently, but it is so far enough to run quite detailed examples.
+### JS Pollyfill
 
-* All unsupported serialization structures in the polyfill throw clear "TODO" errors that should lead to how the fix should be coded.
-* JS bindings generation only supports some generations. Bindings generation can be extended at the "TODO" error points, or the granular API requirements could be upstreamed into wit-bindgen.
+* Not all serialized structures are supported - "TODO" errors are thrown at the unimplemented points.
+* Only a very limited subset of bindings generation is supported, again with "TODO" errors. Per the above this should be moved into the component compilation step upstreaming to use [wit-bindgen](https://github.com/bytecodealliance/wit-bindgen).
 
-This project is _not_ under active development, although **contributors and maintainers will be welcomed**.
+This project is _not_ under active development, but will be maintained within reason. **Contributors / merging efforts very welcome**.
 
 ## Usage
 
